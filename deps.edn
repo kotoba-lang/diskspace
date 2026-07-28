@@ -1,0 +1,7 @@
+{:paths ["src-host"]
+ :deps {io.github.kotoba-lang/kotoba {:local/root "../kotoba"}}
+ :aliases
+ {:run {:main-opts ["-m" "kotoba.lang.diskspace.host"]}
+  :check {:main-opts ["-m" "kotoba.lang.diskspace.host" "--check"]}
+  :test {:extra-paths ["test"]
+         :main-opts ["-m" "kotoba.lang.diskspace.test-runner"]}}}
