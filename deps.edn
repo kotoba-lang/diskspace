@@ -1,5 +1,6 @@
 {:paths ["src-host"]
- :deps {io.github.kotoba-lang/kotoba {:local/root "../kotoba"}}
+ :deps {io.github.kotoba-lang/kotoba {:git/url "https://github.com/kotoba-lang/kotoba.git"
+                                     :git/sha "be20daa161a7ab19ec3f5a13b98a281f5ddd42c1"}}
  :aliases
  {:run {:main-opts ["-m" "kotoba.lang.diskspace.host"]}
   :check {:main-opts ["-m" "kotoba.lang.diskspace.host" "--check"]}
