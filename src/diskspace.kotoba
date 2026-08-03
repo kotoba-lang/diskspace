@@ -7,7 +7,7 @@
 ;;    source-captured-at cache-age-ms]
 ;; row:
 ;;   [entry-id snapshot-id path parent bytes depth modified-at age-days
-;;    git-state symlink? candidate-id]
+;;    git-state symlink? custody candidate-id]
 
 (defn prefix-at? [text needle start index]
   (if (= index (count needle))
@@ -84,12 +84,31 @@
       :cleanup/review
       :cleanup/preserve)))
 
-(defn effective-cleanup-policy [category git-state symlink?]
-  (if symlink?
+;; custody が『消してはいけない』と言っているか。
+;;
+;; :custody/absent は content がどこにも無い状態（annex pointer だけが残る）。
+;; 消せる対象ではなく **既に失われている**ことの報告で、path を消すと最後の
+;; 手掛かり（どの key が失われたか）まで消える。
+;;
+;; :custody/single-copy は唯一のコピー。category が cache に見えても消さない ——
+;; **path の見た目より custody が強い。**
+(defn custody-preserves? [custody]
+  (or (= custody :custody/absent)
+      (= custody :custody/single-copy)
+      (= custody :custody/unknown)))
+
+(defn effective-cleanup-policy [category git-state symlink? custody]
+  ;; custody を最優先にする。ここを category より後ろに置くと
+  ;; 『cache に見える唯一のコピー』を消す。cleanup-recovery が
+  ;; :recreate-cache と主張しても、copy が無ければ再生成できない ——
+  ;; **再生成できるという主張は copy の有無を知らないと嘘になりうる。**
+  (if (custody-preserves? custody)
     :cleanup/preserve
-    (if (= git-state :git/tracked)
+    (if symlink?
       :cleanup/preserve
-      (cleanup-policy category))))
+      (if (= git-state :git/tracked)
+        :cleanup/preserve
+        (cleanup-policy category)))))
 
 (defn cleanup-confidence [policy git-state]
   (if (= policy :cleanup/rebuildable)
@@ -122,7 +141,18 @@
             :cleanup.recovery/redownload-model
             :cleanup.recovery/unknown))))))
 
-(defn cleanup-reasons [policy git-state age-days]
+(defn custody-evidence [custody]
+  (if (= custody :custody/absent)
+    :cleanup.evidence/custody-absent
+    (if (= custody :custody/single-copy)
+      :cleanup.evidence/custody-single-copy
+      (if (= custody :custody/replicated)
+        :cleanup.evidence/custody-replicated
+        (if (= custody :custody/unknown)
+          :cleanup.evidence/custody-unknown
+          :cleanup.evidence/custody-unmanaged)))))
+
+(defn cleanup-reasons [policy git-state age-days custody]
   (let [policy-reason
         (if (= policy :cleanup/rebuildable)
           :cleanup.evidence/rebuildable-path-rule
@@ -137,9 +167,12 @@
         (if (>= age-days 30)
           :cleanup.evidence/not-modified-30-days
           :cleanup.evidence/recent-or-unknown-age)]
-    (pair policy-reason
-          (pair git-reason
-                (pair age-reason 0)))))
+    ;; custody を証跡の先頭に置く。preserve の理由が custody なのか
+    ;; path 規則なのかが読み手に分からないと、判断を検算できない。
+    (pair (custody-evidence custody)
+          (pair policy-reason
+                (pair git-reason
+                      (pair age-reason 0))))))
 
 (defn row->entry [row]
   (let [entry-id (nth row 0)
@@ -152,8 +185,9 @@
         age-days (nth row 7)
         git-state (nth row 8)
         symlink? (nth row 9)
+        custody (nth row 10)
         category (entry-category path)
-        policy (effective-cleanup-policy category git-state symlink?)]
+        policy (effective-cleanup-policy category git-state symlink? custody)]
     {:db/id [:diskspace.entry/id entry-id]
      :diskspace.entry/id entry-id
      :diskspace.entry/snapshot [:diskspace.snapshot/id snapshot-id]
@@ -167,6 +201,7 @@
      :diskspace.entry/modified-at modified-at
      :diskspace.entry/age-days age-days
      :diskspace.entry/git-state git-state
+     :diskspace.entry/custody custody
      :diskspace.entry/symlink? symlink?}))
 
 (defn row->candidate [row]
@@ -178,10 +213,11 @@
         age-days (nth row 7)
         git-state (nth row 8)
         symlink? (nth row 9)
-        candidate-id (nth row 10)
+        custody (nth row 10)
+        candidate-id (nth row 11)
         category (entry-category path)
         parent-category (entry-category parent)
-        policy (effective-cleanup-policy category git-state symlink?)]
+        policy (effective-cleanup-policy category git-state symlink? custody)]
     (if (or (= policy :cleanup/preserve)
             (= category parent-category))
       0
@@ -198,7 +234,7 @@
        :cleanup.candidate/status :cleanup.status/proposed
        :cleanup.candidate/recovery (cleanup-recovery category)
        :cleanup.candidate/evidence
-       (cleanup-reasons policy git-state age-days)})))
+       (cleanup-reasons policy git-state age-days custody)})))
 
 (defn metadata->snapshot [metadata]
   (let [snapshot-id (nth metadata 0)]

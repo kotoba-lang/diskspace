@@ -230,6 +230,99 @@
           :git/untracked)))
     :git/not-repository))
 
+(defn- annex-repo
+  "`file` を含む git-annex リポジトリ（無ければ nil）。
+
+   annex は git repo の一種なので `nearest-git-root` を再利用し、
+   `.git/annex` の存在で annex かどうかを分ける。"
+  [file]
+  (when-let [repo (nearest-git-root file)]
+    (let [ad (io/file repo ".git" "annex")]
+      (when (.isDirectory ad) repo))))
+
+(defn- annex-under-replicated
+  "その annex repo で **copy が `want` 本に満たない**ファイルの相対パス集合。
+
+   `git annex find --lackingcopies=N` は『numcopies を満たすのにあと N 本要る』
+   を意味するので、repo の numcopies 既定（1）ではなく **policy 側の want** を
+   `--numcopies` で明示的に渡す。
+
+   ⚠ 既定に頼ると危険側に倒れる（実測 2026-08-03）: 既定 numcopies=1 では
+   『B2 に 1 本あるだけ』が充足扱いになり、**単一障害点が健全に見える**。
+   custody を測る目的では want=2 が最低線。
+
+   観測のみ。判断（preserve するか alarm を上げるか）は `.kotoba` 側。"
+  [repo want]
+  (try
+    (let [pb (doto (ProcessBuilder.
+                    ["/usr/bin/git" "-C" (.getPath repo) "annex" "find"
+                     "--numcopies" (str want) "--lackingcopies" "1"])
+               (.redirectErrorStream false))
+          process (.start pb)
+          output (slurp (.getInputStream process))]
+      (.waitFor process)
+      (set (remove str/blank? (str/split output #"\n"))))
+    (catch Exception _ ::unknown)))
+
+(defn- annex-absent
+  "content がどこにも無い（copies=0）ファイルの相対パス集合。
+
+   annex pointer は在るのに実体が世界のどこにも無い状態。**repo は『持って
+   いる』と主張しているが取り出せない。** 実測 2026-08-03、m365-archive で
+   3,894 件（生成物 `facts/blobs.edn` 等、push されないまま drop されたもの）。"
+  [repo]
+  (try
+    (let [pb (ProcessBuilder.
+              ["/usr/bin/git" "-C" (.getPath repo) "annex" "find"
+               "--numcopies" "1" "--lackingcopies" "1"])
+          process (.start pb)
+          output (slurp (.getInputStream process))]
+      (.waitFor process)
+      (set (remove str/blank? (str/split output #"\n"))))
+    (catch Exception _ ::unknown)))
+
+(defn covers?
+  "観測ノード（多くはディレクトリ）が、その相対パス集合のどれかを含むか。
+
+   このファイルの他の判定 helper（`tracked-path?` / `path-component-host?`）と
+   同じく public にしてある —— **境界の判定はテストできる場所に置く**。
+   接頭辞一致をラベル境界で見ないと `/repo/ab` が `/repo/a` 配下の欠損を
+   自分のものとして報告する。"
+  [repo file rels]
+  (let [relative (str (.relativize (.toPath repo) (.toPath file)))
+        prefix (if (str/blank? relative) "" (str relative "/"))]
+    (boolean (some #(or (= % relative)
+                        (str/blank? relative)
+                        (str/starts-with? % prefix))
+                   rels))))
+
+(defn custody-state
+  "この path の custody 状態（**観測のみ、判断しない**）。
+
+     :custody/absent       annex 管理だが content がどこにも無い
+     :custody/single-copy  copy が want 本に満たない（= 単一障害点）
+     :custody/replicated   want 本以上ある
+     :custody/unmanaged    annex 管理下ではない
+
+   annex への問い合わせは **repo 単位で 1 回**にして cache する。observed node は
+   高々 120 件、annex repo は数個なので、path ごとに叩くより桁で安い。"
+  [cache want file]
+  (if-let [repo (annex-repo file)]
+    (let [rp (.getPath repo)
+          {:keys [lacking absent]}
+          (if (contains? @cache rp)
+            (get @cache rp)
+            (let [v {:lacking (annex-under-replicated repo want)
+                     :absent (annex-absent repo)}]
+              (swap! cache assoc rp v)
+              v))]
+      (cond
+        (or (= ::unknown lacking) (= ::unknown absent)) :custody/unknown
+        (covers? repo file absent) :custody/absent
+        (covers? repo file lacking) :custody/single-copy
+        :else :custody/replicated))
+    :custody/unmanaged))
+
 (defn file-age [captured-epoch-ms file]
   (try
     (let [modified-ms (.toMillis (Files/getLastModifiedTime (.toPath file)
@@ -241,16 +334,27 @@
       {:modified-at ""
        :age-days 0})))
 
-(defn enrich-rows [rows]
-  (let [captured-epoch-ms (System/currentTimeMillis)
-        tracked-cache (atom {})]
-    (mapv
-     (fn [{:keys [path] :as row}]
-       (let [file (canonical-file path)
-             age (file-age captured-epoch-ms file)]
-         (merge row age {:git-state (git-state tracked-cache file)
-                         :symlink? (boolean (:symlink? row))})))
-     rows)))
+(def default-want-copies
+  "custody を満たすとみなす最小 copy 数。
+
+   **1 にしない。** repo 既定の numcopies=1 では『B2 に 1 本あるだけ』が充足に
+   なり、単一障害点が健全に見える（実測 2026-08-03）。"
+  2)
+
+(defn enrich-rows
+  ([rows] (enrich-rows rows default-want-copies))
+  ([rows want-copies]
+   (let [captured-epoch-ms (System/currentTimeMillis)
+         tracked-cache (atom {})
+         custody-cache (atom {})]
+     (mapv
+      (fn [{:keys [path] :as row}]
+        (let [file (canonical-file path)
+              age (file-age captured-epoch-ms file)]
+          (merge row age {:git-state (git-state tracked-cache file)
+                          :custody (custody-state custody-cache want-copies file)
+                          :symlink? (boolean (:symlink? row))})))
+      rows))))
 
 (defn bounded-observation [repo {:keys [limit] :as opts}]
   (let [started (System/nanoTime)
@@ -272,9 +376,12 @@
         duration-ms (quot (- (System/nanoTime) started) 1000000)
         row-values
         (mapv (fn [{:keys [path parent bytes depth modified-at age-days
-                           git-state symlink?]}]
+                           git-state symlink? custody]}]
+                ;; custody は index 10。candidate-id は 11 へずれる
+                ;; （`.kotoba` 側の row->entry / row->candidate と対で変える）。
                 (pair-chain [(str id "|" path) id path parent bytes depth
                              modified-at age-days git-state symlink?
+                             (or custody :custody/unmanaged)
                              (str id "|" path "|candidate")]))
               retained)
         metadata
