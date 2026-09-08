@@ -5,7 +5,7 @@
   cleanup policy, report shape, and Datomic projection remain in .kotoba."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.host-providers :as host-providers]
             [kotoba.launcher :as launcher]
             [kotoba.runtime :as runtime])
