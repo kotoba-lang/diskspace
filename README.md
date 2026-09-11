@@ -17,20 +17,20 @@ The default scan inventories the current user's home directory to depth 3 and
 retains the 120 largest observed nodes:
 
 ```sh
-clojure -M:run
+kbb -M:run
 ```
 
 Whole logical macOS root (the physical `/System/Volumes` view is excluded to
 avoid APFS firmlink double counting):
 
 ```sh
-clojure -M:run --root / --depth 3 --refresh
+kbb -M:run --root / --depth 3 --refresh
 ```
 
 Explicit options:
 
 ```sh
-clojure -M:run --root /Users/me --depth 3 --limit 120
+kbb -M:run --root /Users/me --depth 3 --limit 120
 ```
 
 An observation cache is valid for 15 minutes by default. A repeated command
@@ -38,10 +38,10 @@ with the same root and depth reuses the native scan and still creates a new
 Kotoba/Datomic snapshot with explicit cache provenance:
 
 ```sh
-clojure -M:run --root /Users/me --depth 3
-clojure -M:run --root /Users/me --depth 3                 # cache hit
-clojure -M:run --root /Users/me --depth 3 --refresh       # forced full scan
-clojure -M:run --root /Users/me --depth 3 --max-age-seconds 60
+kbb -M:run --root /Users/me --depth 3
+kbb -M:run --root /Users/me --depth 3                 # cache hit
+kbb -M:run --root /Users/me --depth 3 --refresh       # forced full scan
+kbb -M:run --root /Users/me --depth 3 --max-age-seconds 60
 ```
 
 Outputs:
@@ -64,7 +64,7 @@ is proposed, so parent and child sizes are not double counted.
 For a focused cache assessment:
 
 ```sh
-clojure -M:run --root "$HOME/Library/Caches" --depth 2 --limit 120 --refresh
+kbb -M:run --root "$HOME/Library/Caches" --depth 2 --limit 120 --refresh
 ```
 
 The generated proposal can later be projected to `local-manimani` for human

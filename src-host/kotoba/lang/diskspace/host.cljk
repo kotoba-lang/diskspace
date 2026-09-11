@@ -58,9 +58,9 @@
         (throw (ex-info "unknown argument" {:argument (first args)}))))))
 
 (defn usage []
-  (str "Usage: clojure -M:run [--root PATH] [--depth N] [--limit K]\n"
+  (str "Usage: kbb -M:run [--root PATH] [--depth N] [--limit K]\n"
        "                       [--max-age-seconds N] [--refresh]\n"
-       "       clojure -M:check\n"))
+       "       kbb -M:check\n"))
 
 (defn pair-chain [values]
   (reduce (fn [tail value] (list value tail)) 0 (reverse values)))
