@@ -80,7 +80,7 @@ Install `schema.edn` once, then transact each generated transaction file.
 assigns cleanup policy, and projects observations to Datomic entities.
 
 Safe Kotoba currently has `fs-read` and `fs-write`, but no directory-list or
-file-stat host import. `src-host/kotoba/lang/diskspace/host.clj` is therefore
+file-stat host import. `src-host/kotoba/lang/diskspace/host.cljk` is therefore
 a narrow capability adapter:
 
 - it invokes macOS `/usr/bin/du` on one canonical root;
