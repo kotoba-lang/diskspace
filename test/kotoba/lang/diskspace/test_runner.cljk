@@ -1,5 +1,5 @@
 (ns kotoba.lang.diskspace.test-runner
-  (:require [clojure.test :as test]
+  (:require [kotoba.test :as test]
             [kotoba.lang.diskspace.host-test]))
 
 (defn -main [& _]
