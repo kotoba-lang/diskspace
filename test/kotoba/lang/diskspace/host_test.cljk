@@ -1,7 +1,6 @@
 (ns kotoba.lang.diskspace.host-test
-  (:require [kotoba.test :refer [deftest is testing]]
-            [kotoba.lang.diskspace.host :as host])
-  (:import [java.io File]))
+  (:require [kotoba.io :as kio] [kotoba.test :refer [deftest is testing]]
+            [kotoba.lang.diskspace.host :as host]))
 
 (deftest path-component-boundaries
   (testing "recognized directory components require an end or slash boundary"
@@ -10,11 +9,11 @@
     (is (not (host/path-component-host? "/repo/targeted" "/target")))))
 
 (deftest tracked-path-membership
-  (let [repo (File. "/repo")
+  (let [repo (kio/file "/repo")
         tracked #{"src/main.clj" "target/important.txt"}]
-    (is (host/tracked-path? repo tracked (File. "/repo/src")))
-    (is (host/tracked-path? repo tracked (File. "/repo/target")))
-    (is (not (host/tracked-path? repo tracked (File. "/repo/node_modules"))))))
+    (is (host/tracked-path? repo tracked (kio/file "/repo/src")))
+    (is (host/tracked-path? repo tracked (kio/file "/repo/target")))
+    (is (not (host/tracked-path? repo tracked (kio/file "/repo/node_modules"))))))
 
 (deftest ordinary-two-element-vectors-are-not-pairs
   (let [value [{:path "one"} {:path "two"}]]
@@ -29,15 +28,15 @@
 ;; 再取得できるかは別の事実だった。
 
 (deftest covers-matches-on-path-boundaries
-  (let [repo (File. "/repo")]
+  (let [repo (kio/file "/repo")]
     (testing "自分自身と配下は覆う"
-      (is (host/covers? repo (File. "/repo/a/b.eml") #{"a/b.eml"}))
-      (is (host/covers? repo (File. "/repo/a") #{"a/b.eml"})))
+      (is (host/covers? repo (kio/file "/repo/a/b.eml") #{"a/b.eml"}))
+      (is (host/covers? repo (kio/file "/repo/a") #{"a/b.eml"})))
     (testing "**接頭辞の一致をラベル境界で見る** —— でないと /repo/ab が
               /repo/a 配下の欠損を自分のものとして報告する"
-      (is (not (host/covers? repo (File. "/repo/ab") #{"a/b.eml"}))))
+      (is (not (host/covers? repo (kio/file "/repo/ab") #{"a/b.eml"}))))
     (testing "無関係な path は覆わない"
-      (is (not (host/covers? repo (File. "/repo/c") #{"a/b.eml"}))))))
+      (is (not (host/covers? repo (kio/file "/repo/c") #{"a/b.eml"}))))))
 
 (deftest want-copies-default-is-not-one
   (testing "numcopies=1 を既定にしない。
