@@ -3,7 +3,7 @@
 
   The adapter owns OS observation and atomic persistence only. Classification,
   cleanup policy, report shape, and Datomic projection remain in .kotoba."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.edn :as edn]
             [clojure.java.io :as io]
             [kotoba.lang.text :as str]
             [kotoba.host-providers :as host-providers]
