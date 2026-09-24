@@ -1,5 +1,5 @@
 (ns kotoba.lang.diskspace.host-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.lang.diskspace.host :as host])
   (:import [java.io File]))
 
